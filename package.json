@@ -19,7 +19,9 @@
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.11.3",
     "node-cron": "^3.0.3",
-    "nodemailer": "^6.10.1"
+    "nodemailer": "^6.10.1",
+    "pg": "^8.16.3",
+    "pg-pool": "^3.10.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
