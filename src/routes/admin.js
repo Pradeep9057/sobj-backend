@@ -30,18 +30,22 @@ router.get('/orders/:id', requireAuth, requireAdmin, async (req, res) => {
 router.put('/orders/:id/status', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { status, notes, tracking_number } = req.body;
+    
+    // Update order status
     await orderSvc.updateOrderStatus(req.params.id, status, notes);
     
+    // Update tracking number if provided
     if (tracking_number) {
       await pool.query(
-        `UPDATE orders SET tracking_number = $1 WHERE id = $2`,
+        `UPDATE orders SET tracking_number = $1, updated_at = NOW() WHERE id = $2`,
         [tracking_number, req.params.id]
       );
     }
     
-    res.json({ ok: true });
+    res.json({ ok: true, message: 'Order updated successfully' });
   } catch (e) {
-    res.status(400).json({ message: e.message });
+    console.error('Order update error:', e);
+    res.status(400).json({ message: e.message || 'Failed to update order' });
   }
 });
 

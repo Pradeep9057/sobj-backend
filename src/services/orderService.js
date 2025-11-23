@@ -143,25 +143,51 @@ export async function getOrderById(orderId, userId = null) {
 
   const order = result.rows[0];
 
-  // Get order items
-  const itemsResult = await q(
-    `SELECT 
-      oi.id,
-      oi.product_id,
-      oi.quantity,
-      oi.unit_price,
-      oi.total_price,
-      p.name as product_name,
-      p.image_url,
-      p.weight,
-      p.metal_type
-    FROM order_items oi
-    JOIN products p ON p.id = oi.product_id
-    WHERE oi.order_id = $1`,
-    [orderId]
-  );
-
-  order.items = itemsResult.rows;
+  // Get order items (try new schema first, fallback to old schema)
+  try {
+    const itemsResult = await q(
+      `SELECT 
+        oi.id,
+        oi.product_id,
+        oi.quantity,
+        oi.unit_price,
+        oi.total_price,
+        p.name as product_name,
+        p.image_url,
+        p.weight,
+        p.metal_type
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = $1`,
+      [orderId]
+    );
+    order.items = itemsResult.rows;
+  } catch (err) {
+    // If order_items table doesn't exist, use old schema
+    if (order.product_id) {
+      const productResult = await q(
+        `SELECT name as product_name, image_url, weight, metal_type
+         FROM products WHERE id = $1`,
+        [order.product_id]
+      );
+      if (productResult.rows.length > 0) {
+        order.items = [{
+          product_id: order.product_id,
+          product_name: productResult.rows[0].product_name,
+          quantity: order.quantity || 1,
+          unit_price: order.total_price ? (order.total_price / (order.quantity || 1)) : order.total_price,
+          total_price: order.total_price,
+          image_url: productResult.rows[0].image_url,
+          weight: productResult.rows[0].weight,
+          metal_type: productResult.rows[0].metal_type
+        }];
+      } else {
+        order.items = [];
+      }
+    } else {
+      order.items = [];
+    }
+  }
 
   // Get status history
   const historyResult = await q(
