@@ -22,7 +22,7 @@
     "nodemailer": "^6.10.1",
     "pg": "^8.16.3",
     "pg-pool": "^3.10.1",
-    "razorpay": "^2.9.2"
+    "razorpay": "^2.9.6"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

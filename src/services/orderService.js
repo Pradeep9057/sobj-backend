@@ -264,6 +264,9 @@ export async function updatePaymentStatus(orderId, paymentStatus, razorpayPaymen
 
   if (paymentStatus === 'paid') {
     await updateOrderStatus(orderId, 'confirmed', 'Payment received');
+  } else if (paymentStatus === 'pending' && razorpayPaymentId?.startsWith('cod_')) {
+    // COD orders are confirmed but payment is pending
+    await updateOrderStatus(orderId, 'confirmed', 'Order placed as Cash on Delivery');
   }
 }
 

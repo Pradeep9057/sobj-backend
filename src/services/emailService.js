@@ -9,16 +9,52 @@ export function getTransport() {
   return nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
 }
 
-export async function sendOtpMail(to, code) {
-  try {
-    const transporter = getTransport();
-    const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
+let transporter = null;
+
+function getTransport() {
+  // Validate email configuration
+  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    return null;
+  }
+
+  // Create transporter only once (prevents re-creation + errors on Render)
+  if (!transporter) {
+    const host = process.env.EMAIL_HOST;
+    const port = Number(process.env.EMAIL_PORT || 587);
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASS;
+    const secure = process.env.EMAIL_SECURE === 'true';
     
-    // Validate email configuration
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      console.error('Email configuration missing. Please set EMAIL_HOST, EMAIL_USER, and EMAIL_PASS environment variables.');
-      throw new Error('Email service not configured');
-    }
+    transporter = nodemailer.createTransport({ 
+      host, 
+      port, 
+      secure, 
+      auth: { user, pass },
+      // Add timeout and connection options
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000
+    });
+  }
+  
+  return transporter;
+}
+
+export async function sendOtpMail(to, code) {
+  const transporter = getTransport();
+  
+  // If email is not configured, log OTP to console instead
+  if (!transporter) {
+    console.log(`\n📧 ============================================`);
+    console.log(`📧 OTP for ${to}: ${code}`);
+    console.log(`📧 Email service not configured. OTP logged above.`);
+    console.log(`📧 ============================================\n`);
+    // Return success so registration/login can continue
+    return 'console-logged';
+  }
+
+  try {
+    const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
     
     const info = await transporter.sendMail({
       from,
@@ -36,13 +72,17 @@ export async function sendOtpMail(to, code) {
         </div>
       `
     });
-    console.log(`OTP email sent to ${to}: ${info.messageId}`);
+    console.log(`✅ OTP email sent to ${to}: ${info.messageId}`);
     return info.messageId;
   } catch (err) {
-    console.error("OTP Email Send Error:", err);
-    // Don't throw error - allow registration/login to continue even if email fails
-    // In production, you might want to log this to a monitoring service
-    throw new Error("Failed to send OTP email. Please check your email configuration.");
+    console.error(`⚠️ OTP Email Send Error for ${to}:`, err.message);
+    // Log OTP to console as fallback
+    console.log(`\n📧 ============================================`);
+    console.log(`📧 OTP for ${to}: ${code}`);
+    console.log(`📧 Email sending failed. OTP logged above.`);
+    console.log(`📧 ============================================\n`);
+    // Return success so registration/login can continue
+    return 'console-logged-fallback';
   }
 }
 
