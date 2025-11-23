@@ -86,7 +86,7 @@ export async function register({ name, email, password }) {
   // Insert user
   const result = await q(
     `INSERT INTO users (name, email, password, email_verified)
-     VALUES ($1, $2, $3, 0)
+     VALUES ($1, $2, $3, false)
      RETURNING id`,
     [name || '', email, hashed]
   );
@@ -193,7 +193,7 @@ export async function verifyOtp({ email, code }) {
 
   await q(
     `UPDATE users 
-     SET email_verified = 1, otp_code = NULL, otp_expires = NULL 
+     SET email_verified = true, otp_code = NULL, otp_expires = NULL 
      WHERE id = $1`,
     [user.id]
   );
