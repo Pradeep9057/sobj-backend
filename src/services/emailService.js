@@ -1,14 +1,5 @@
 import nodemailer from 'nodemailer';
 
-export function getTransport() {
-  const host = process.env.EMAIL_HOST;
-  const port = Number(process.env.EMAIL_PORT || 587);
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  const secure = process.env.EMAIL_SECURE === 'true';
-  return nodemailer.createTransport({ host, port, secure, auth: { user, pass } });
-}
-
 let transporter = null;
 
 function getTransport() {
