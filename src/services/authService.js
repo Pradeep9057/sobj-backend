@@ -166,7 +166,16 @@ export async function sendOtp(email) {
 
   try {
     await sendOtpMail(email, code);
-  } catch {}
+    console.log(`✅ OTP sent successfully to ${email}`);
+  } catch (err) {
+    console.error(`⚠️ Failed to send OTP email to ${email}:`, err.message);
+    // Still return true to allow registration/login to proceed
+    // The OTP is saved in DB, user can contact support if email fails
+    // In development, you might want to log the OTP to console
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`📧 OTP for ${email}: ${code} (Email sending failed, but OTP is saved)`);
+    }
+  }
 
   return true;
 }

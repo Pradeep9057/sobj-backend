@@ -4,13 +4,15 @@ import { calculateProductPrice } from './calculatePrice.js';
 const q = (text, params) => pool.query(text, params);
 
 /**
- * Create order from cart items
- * Note: Current database structure supports one product per order
- * For multiple items, we create separate orders or update schema
+ * Create order from cart items with address and payment info
  */
-export async function createOrder(userId, items) {
+export async function createOrder(userId, items, shippingAddress, razorpayOrderId = null) {
   if (!items || items.length === 0) {
     throw new Error('Cart is empty');
+  }
+
+  if (!shippingAddress) {
+    throw new Error('Shipping address is required');
   }
 
   // Calculate total for all items to determine shipping
@@ -47,56 +49,83 @@ export async function createOrder(userId, items) {
 
   // Calculate shipping based on order total
   const shippingCharges = orderSubtotal < 50000 ? orderSubtotal * 0.01 : 0;
-  const orderTotal = orderSubtotal + shippingCharges;
+  const gst = orderSubtotal * 0.03;
+  const orderTotal = orderSubtotal + gst + shippingCharges;
 
-  // Create separate order for each item (current DB structure)
-  // Or create one order with first item and note others
-  const createdOrders = [];
+  // Create single order with all items
+  const addressString = JSON.stringify(shippingAddress);
   
-  for (const item of orderItems) {
-    const orderResult = await q(
-      `INSERT INTO orders (user_id, product_id, quantity, total_price, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       RETURNING id`,
-      [userId, item.product_id, item.quantity, item.total_price]
-    );
+  const orderResult = await q(
+    `INSERT INTO orders (user_id, total_price, status, payment_status, shipping_address, razorpay_order_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+     RETURNING id`,
+    [userId, orderTotal, 'pending', 'pending', addressString, razorpayOrderId]
+  );
 
-    createdOrders.push({
-      id: orderResult.rows[0].id,
-      product_id: item.product_id,
-      quantity: item.quantity,
-      total_price: item.total_price
-    });
+  const orderId = orderResult.rows[0].id;
+
+  // Create order items (if table exists)
+  try {
+    for (const item of orderItems) {
+      await q(
+        `INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [orderId, item.product_id, item.quantity, item.unit_price, item.total_price]
+      );
+    }
+  } catch (err) {
+    // If order_items table doesn't exist, create order with first item (legacy support)
+    if (orderItems.length > 0) {
+      await q(
+        `UPDATE orders SET product_id = $1, quantity = $2 WHERE id = $3`,
+        [orderItems[0].product_id, orderItems[0].quantity, orderId]
+      );
+    }
+  }
+
+  // Add status history (if table exists)
+  try {
+    await q(
+      `INSERT INTO order_status_history (order_id, status, notes)
+       VALUES ($1, $2, $3)`,
+      [orderId, 'pending', 'Order created']
+    );
+  } catch (err) {
+    // Table might not exist yet
+    console.warn('order_status_history table not found, skipping history entry');
   }
 
   return {
-    orders: createdOrders,
+    id: orderId,
     total_price: orderTotal,
-    item_count: orderItems.length
+    items: orderItems,
+    status: 'pending',
+    payment_status: 'pending'
   };
 }
 
 /**
- * Get order by ID
+ * Get order by ID with items and status history
  */
 export async function getOrderById(orderId, userId = null) {
   let query = `
     SELECT 
       o.id,
       o.user_id,
-      o.product_id,
-      o.quantity,
       o.total_price,
+      o.status,
+      o.payment_status,
+      o.payment_id,
+      o.razorpay_order_id,
+      o.razorpay_payment_id,
+      o.shipping_address,
+      o.tracking_number,
       o.created_at,
+      o.updated_at,
       u.name as user_name,
-      u.email as user_email,
-      p.name as product_name,
-      p.image_url,
-      p.weight,
-      p.metal_type
+      u.email as user_email
     FROM orders o
     LEFT JOIN users u ON u.id = o.user_id
-    LEFT JOIN products p ON p.id = o.product_id
     WHERE o.id = $1
   `;
   const params = [orderId];
@@ -112,29 +141,129 @@ export async function getOrderById(orderId, userId = null) {
     return null;
   }
 
-  return result.rows[0];
+  const order = result.rows[0];
+
+  // Get order items
+  const itemsResult = await q(
+    `SELECT 
+      oi.id,
+      oi.product_id,
+      oi.quantity,
+      oi.unit_price,
+      oi.total_price,
+      p.name as product_name,
+      p.image_url,
+      p.weight,
+      p.metal_type
+    FROM order_items oi
+    JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = $1`,
+    [orderId]
+  );
+
+  order.items = itemsResult.rows;
+
+  // Get status history
+  const historyResult = await q(
+    `SELECT status, notes, created_at
+     FROM order_status_history
+     WHERE order_id = $1
+     ORDER BY created_at ASC`,
+    [orderId]
+  );
+
+  order.status_history = historyResult.rows;
+
+  // Parse shipping address
+  if (order.shipping_address) {
+    try {
+      order.shipping_address = JSON.parse(order.shipping_address);
+    } catch (e) {
+      // Keep as string if not JSON
+    }
+  }
+
+  return order;
 }
 
 /**
- * Get user orders
+ * Get user orders with status
  */
 export async function getUserOrders(userId) {
   const result = await q(
     `SELECT 
       o.id,
-      o.product_id,
-      o.quantity,
       o.total_price,
+      o.status,
+      o.payment_status,
+      o.tracking_number,
       o.created_at,
-      p.name as product_name,
-      p.image_url
+      COUNT(oi.id) as item_count
     FROM orders o
-    LEFT JOIN products p ON p.id = o.product_id
+    LEFT JOIN order_items oi ON oi.order_id = o.id
     WHERE o.user_id = $1
+    GROUP BY o.id
     ORDER BY o.created_at DESC`,
     [userId]
   );
 
+  // Get first product image for each order
+  for (const order of result.rows) {
+    const firstItem = await q(
+      `SELECT p.image_url, p.name
+       FROM order_items oi
+       JOIN products p ON p.id = oi.product_id
+       WHERE oi.order_id = $1
+       LIMIT 1`,
+      [order.id]
+    );
+    if (firstItem.rows.length > 0) {
+      order.image_url = firstItem.rows[0].image_url;
+      order.product_name = firstItem.rows[0].name;
+    }
+  }
+
   return result.rows;
+}
+
+/**
+ * Update order status
+ */
+export async function updateOrderStatus(orderId, status, notes = null) {
+  await q(
+    `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2`,
+    [status, orderId]
+  );
+
+  // Check if order_status_history table exists before inserting
+  try {
+    await q(
+      `INSERT INTO order_status_history (order_id, status, notes)
+       VALUES ($1, $2, $3)`,
+      [orderId, status, notes || `Status updated to ${status}`]
+    );
+  } catch (err) {
+    // Table might not exist yet, log but don't fail
+    console.warn('order_status_history table not found, skipping history entry');
+  }
+}
+
+/**
+ * Update payment status
+ */
+export async function updatePaymentStatus(orderId, paymentStatus, razorpayPaymentId = null) {
+  await q(
+    `UPDATE orders 
+     SET payment_status = $1, 
+         razorpay_payment_id = $2,
+         payment_id = $2,
+         updated_at = NOW()
+     WHERE id = $3`,
+    [paymentStatus, razorpayPaymentId, orderId]
+  );
+
+  if (paymentStatus === 'paid') {
+    await updateOrderStatus(orderId, 'confirmed', 'Payment received');
+  }
 }
 

@@ -3,6 +3,7 @@ import { requireAuth } from '../middlewares/auth.js';
 import * as svc from '../services/userService.js';
 import * as orderSvc from '../services/orderService.js';
 import { changePassword } from '../services/passwordService.js';
+import pool from '../db.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 router.get('/me/orders', requireAuth, async (req, res) => {
-  const list = await svc.orders(req.user.id);
+  const list = await orderSvc.getUserOrders(req.user.id);
   res.json(list);
 });
 
@@ -61,9 +62,41 @@ router.post('/me/change-password', requireAuth, async (req, res) => {
 
 router.post('/me/orders', requireAuth, async (req, res) => {
   try {
-    const { items } = req.body;
-    const order = await orderSvc.createOrder(req.user.id, items);
+    const { items, shipping_address, razorpay_order_id } = req.body;
+    const order = await orderSvc.createOrder(req.user.id, items, shipping_address, razorpay_order_id);
     res.status(201).json(order);
+  } catch (e) {
+    res.status(400).json({ message: e.message });
+  }
+});
+
+router.get('/me/orders/:id', requireAuth, async (req, res) => {
+  try {
+    const order = await orderSvc.getOrderById(req.params.id, req.user.id);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    res.json(order);
+  } catch (e) {
+    res.status(400).json({ message: e.message });
+  }
+});
+
+router.put('/me/orders/:id', requireAuth, async (req, res) => {
+  try {
+    const { razorpay_order_id } = req.body;
+    const order = await orderSvc.getOrderById(req.params.id, req.user.id);
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+    
+    // Update razorpay order ID
+    await pool.query(
+      `UPDATE orders SET razorpay_order_id = $1 WHERE id = $2 AND user_id = $3`,
+      [razorpay_order_id, req.params.id, req.user.id]
+    );
+    
+    res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ message: e.message });
   }
