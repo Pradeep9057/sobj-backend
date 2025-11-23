@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { register, login, profile } from '../services/authService.js';
+import { register, login, profile, verifyOtp } from '../services/authService.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
 /**
- * REGISTER (no OTP needed)
+ * REGISTER (sends OTP)
  */
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
@@ -18,24 +18,38 @@ router.post('/register', async (req, res) => {
 });
 
 /**
- * LOGIN (Direct login, no OTP)
+ * LOGIN (sends OTP)
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     const r = await login({ email, password });
+    res.json(r);
+  } catch (e) {
+    res.status(401).json({ message: e.message });
+  }
+});
 
-    // Set token instantly after password valid
-    res.cookie('token', r.token, {
+/**
+ * VERIFY OTP (returns token)
+ */
+router.post('/verify-otp', async (req, res) => {
+  const { email, code } = req.body;
+  try {
+    const result = await verifyOtp({ email, code });
+    
+    // Set token in cookie
+    res.cookie('token', result.token, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false,
+      secure: process.env.NODE_ENV === 'production',
       maxAge: 2 * 24 * 60 * 60 * 1000,
     });
 
-    res.json({ ok: true });
+    // Also return token in response for frontend to store
+    res.json({ token: result.token, ok: true });
   } catch (e) {
-    res.status(401).json({ message: e.message });
+    res.status(400).json({ message: e.message });
   }
 });
 
