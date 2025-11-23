@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import * as svc from '../services/userService.js';
+import * as orderSvc from '../services/orderService.js';
 import { changePassword } from '../services/passwordService.js';
 
 const router = Router();
@@ -53,6 +54,16 @@ router.post('/me/change-password', requireAuth, async (req, res) => {
   try {
     await changePassword(req.user.id, oldPassword, newPassword);
     res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ message: e.message });
+  }
+});
+
+router.post('/me/orders', requireAuth, async (req, res) => {
+  try {
+    const { items } = req.body;
+    const order = await orderSvc.createOrder(req.user.id, items);
+    res.status(201).json(order);
   } catch (e) {
     res.status(400).json({ message: e.message });
   }

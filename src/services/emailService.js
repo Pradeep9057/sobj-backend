@@ -10,15 +10,40 @@ export function getTransport() {
 }
 
 export async function sendOtpMail(to, code) {
-  const transporter = getTransport();
-  const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
-  const info = await transporter.sendMail({
-    from,
-    to,
-    subject: 'Your Sonaura verification code',
-    html: `<p>Your verification code is <b>${code}</b>. It expires in 10 minutes.</p>`
-  });
-  return info.messageId;
+  try {
+    const transporter = getTransport();
+    const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
+    
+    // Validate email configuration
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.error('Email configuration missing. Please set EMAIL_HOST, EMAIL_USER, and EMAIL_PASS environment variables.');
+      throw new Error('Email service not configured');
+    }
+    
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject: 'Your Sonaura verification code',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #D4AF37;">Sonaura Verification Code</h2>
+          <p>Your verification code is:</p>
+          <div style="background: #f5f5f5; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; color: #D4AF37; letter-spacing: 5px; margin: 20px 0;">
+            ${code}
+          </div>
+          <p>This code will expire in <b>10 minutes</b>.</p>
+          <p style="color: #666; font-size: 12px; margin-top: 30px;">If you didn't request this code, please ignore this email.</p>
+        </div>
+      `
+    });
+    console.log(`OTP email sent to ${to}: ${info.messageId}`);
+    return info.messageId;
+  } catch (err) {
+    console.error("OTP Email Send Error:", err);
+    // Don't throw error - allow registration/login to continue even if email fails
+    // In production, you might want to log this to a monitoring service
+    throw new Error("Failed to send OTP email. Please check your email configuration.");
+  }
 }
 
 
