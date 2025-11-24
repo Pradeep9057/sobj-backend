@@ -4,7 +4,13 @@ let transporter = null;
 
 function getTransport() {
   // Validate email configuration
-  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+  const missingVars = [];
+  if (!process.env.EMAIL_HOST) missingVars.push('EMAIL_HOST');
+  if (!process.env.EMAIL_USER) missingVars.push('EMAIL_USER');
+  if (!process.env.EMAIL_PASS) missingVars.push('EMAIL_PASS');
+
+  if (missingVars.length > 0) {
+    console.error(`⚠️ Email configuration missing environment variables: ${missingVars.join(', ')}`);
     return null;
   }
 
@@ -15,17 +21,22 @@ function getTransport() {
     const user = process.env.EMAIL_USER;
     const pass = process.env.EMAIL_PASS;
     const secure = process.env.EMAIL_SECURE === 'true';
-    
-    transporter = nodemailer.createTransport({ 
-      host, 
-      port, 
-      secure, 
-      auth: { user, pass },
-      // Add timeout and connection options
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000
-    });
+
+    try {
+      transporter = nodemailer.createTransport({ 
+        host, 
+        port, 
+        secure, 
+        auth: { user, pass },
+        // Add timeout and connection options
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
+    } catch (e) {
+      console.error('⚠️ Error creating nodemailer transporter:', e.message);
+      transporter = null;
+    }
   }
   
   return transporter;
@@ -76,49 +87,3 @@ export async function sendOtpMail(to, code) {
     return 'console-logged-fallback';
   }
 }
-
-
-// import nodemailer from 'nodemailer';
-
-// let transporter = null;
-
-// /**
-//  * Create transporter only once (prevents re-creation + errors on Render)
-//  */
-// function getTransport() {
-//   if (transporter) return transporter;
-
-//   transporter = nodemailer.createTransport({
-//     host: process.env.EMAIL_HOST,
-//     port: Number(process.env.EMAIL_PORT || 587),
-//     secure: process.env.EMAIL_SECURE === 'true',
-//     auth: {
-//       user: process.env.EMAIL_USER,
-//       pass: process.env.EMAIL_PASS,
-//     },
-//   });
-
-//   return transporter;
-// }
-
-// export async function sendOtpMail(to, code) {
-//   const transport = getTransport();
-//   const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
-
-//   try {
-//     const info = await transport.sendMail({
-//       from,
-//       to,
-//       subject: 'Your Sonaura verification code',
-//       html: `
-//         <p>Your verification code is <b>${code}</b>.</p>
-//         <p>This code will expire in <b>10 minutes</b>.</p>
-//       `,
-//     });
-
-//     return info.messageId;
-//   } catch (err) {
-//     console.error("OTP Email Send Error:", err);
-//     throw new Error("Failed to send OTP email");
-//   }
-// }

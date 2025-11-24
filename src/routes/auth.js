@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { register, login, profile, verifyOtp } from '../services/authService.js';
 import { requireAuth } from '../middlewares/auth.js';
+import { sendOtpMail } from '../services/emailService.js';
 
 const router = Router();
 
@@ -71,6 +72,22 @@ router.get('/profile', requireAuth, async (req, res) => {
 router.post('/logout', async (req, res) => {
   res.clearCookie('token', { httpOnly: true, sameSite: 'lax', secure: false });
   res.json({ ok: true });
+});
+
+/**
+ * TEST EMAIL SENDING
+ */
+router.post('/test-email', async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+  try {
+    const info = await sendOtpMail(email, '123456');
+    res.json({ message: 'Test OTP email sent', info });
+  } catch (e) {
+    res.status(500).json({ message: 'Failed to send test email', error: e.message });
+  }
 });
 
 export default router;
