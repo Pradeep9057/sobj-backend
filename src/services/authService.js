@@ -86,7 +86,7 @@ export async function register({ name, email, password }) {
   // Insert user
   const result = await q(
     `INSERT INTO users (name, email, password, email_verified)
-     VALUES ($1, $2, $3, false)
+     VALUES ($1, $2, $3, 0)
      RETURNING id`,
     [name || '', email, hashed]
   );
@@ -147,15 +147,11 @@ export async function sendOtp(email) {
   const now = Date.now();
 
   if (row && row.otp_expires) {
-    const expiryTime = new Date(row.otp_expires).getTime();
-    const msLeft = expiryTime - now;
+    const msLeft = new Date(row.otp_expires).getTime() - now;
     const minutesLeft = msLeft / 60000;
 
-    // If OTP is still valid for more than 9 minutes, reuse it
-    if (minutesLeft > 9) {
-      console.log(`✅ Reusing existing OTP for ${email} (${minutesLeft.toFixed(1)} minutes remaining)`);
-      return true;
-    }
+    // Prevent multiple OTPs within 1 minute
+    if (minutesLeft > 9) return true;
   }
 
   const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -170,30 +166,12 @@ export async function sendOtp(email) {
 
   try {
     await sendOtpMail(email, code);
-    console.log(`✅ OTP sent successfully to ${email}: ${code}`);
-  } catch (err) {
-    console.error(`⚠️ Failed to send OTP email to ${email}:`, err.message);
-    // Log OTP to console in development mode
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`\n📧 ============================================`);
-      console.log(`📧 OTP for ${email}: ${code}`);
-      console.log(`📧 Expires at: ${expires.toISOString()}`);
-      console.log(`📧 ============================================\n`);
-    }
-  }
+  } catch {}
 
   return true;
 }
 
 export async function verifyOtp({ email, code }) {
-  // Validate inputs
-  if (!email || !code) {
-    throw new Error('Email and code are required');
-  }
-
-  // Normalize code to string and trim whitespace
-  const normalizedCode = String(code).trim();
-
   const result = await q(
     `SELECT id, role, otp_code, otp_expires 
      FROM users 
@@ -205,36 +183,21 @@ export async function verifyOtp({ email, code }) {
 
   const user = result.rows[0];
 
-  // Check if OTP exists
-  if (!user.otp_code) {
-    throw new Error('No OTP found. Please request a new one.');
-  }
-
-  // Compare OTP codes (handle both string and numeric comparisons)
-  const storedCode = String(user.otp_code).trim();
-  if (storedCode !== normalizedCode) {
+  if (!user.otp_code || user.otp_code !== code) {
     throw new Error('Invalid code');
   }
 
-  // Check if OTP is expired
-  if (user.otp_expires) {
-    const expiryTime = new Date(user.otp_expires).getTime();
-    const currentTime = Date.now();
-    
-    if (expiryTime < currentTime) {
-      throw new Error('Code expired');
-    }
+  if (user.otp_expires && new Date(user.otp_expires).getTime() < Date.now()) {
+    throw new Error('Code expired');
   }
 
-  // Clear OTP and mark email as verified
   await q(
     `UPDATE users 
-     SET email_verified = true, otp_code = NULL, otp_expires = NULL 
+     SET email_verified = 1, otp_code = NULL, otp_expires = NULL 
      WHERE id = $1`,
     [user.id]
   );
 
-  // Generate JWT token
   const token = jwt.sign(
     { id: user.id, role: user.role },
     process.env.JWT_SECRET,

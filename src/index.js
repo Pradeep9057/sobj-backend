@@ -10,8 +10,6 @@ import userRoutes from './routes/user.js';
 import adminRoutes from './routes/admin.js';
 import imageRoutes from './routes/images.js';
 import itemRoutes from './routes/items.js';
-import paymentRoutes from './routes/payments.js';
-import invoiceRoutes from './routes/invoices.js';
 
 dotenv.config();
 
@@ -49,8 +47,6 @@ app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/images', imageRoutes);
 app.use('/api/items', itemRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/invoices', invoiceRoutes);
 
 const port = process.env.PORT || 5000;
 app.listen(port, () => {
