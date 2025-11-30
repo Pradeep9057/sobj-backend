@@ -22,16 +22,45 @@ function getTransport() {
     const pass = process.env.EMAIL_PASS;
     const secure = process.env.EMAIL_SECURE === 'true';
 
+    console.log(`\n📧 ========== EMAIL SERVICE CONFIGURATION ==========`);
+    console.log(`📧 HOST: ${host}`);
+    console.log(`📧 PORT: ${port}`);
+    console.log(`📧 SECURE: ${secure}`);
+    console.log(`📧 USER: ${user}`);
+    console.log(`📧 PASS: ${pass ? pass.substring(0, 3) + '***' + pass.substring(pass.length - 2) : 'NOT SET'}`);
+    console.log(`📧 FROM: ${process.env.EMAIL_FROM || 'default'}`);
+    console.log(`📧 ====================================================\n`);
+
     try {
       transporter = nodemailer.createTransport({ 
         host, 
         port, 
         secure, 
         auth: { user, pass },
-        // Add timeout and connection options
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
+        // Increase timeouts for Gmail
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000,
+        // Additional options for better reliability
+        tls: {
+          rejectUnauthorized: false
+        },
+        pool: {
+          maxConnections: 1,
+          maxMessages: Infinity,
+          rateDelta: 20000,
+          rateLimit: 5
+        }
+      });
+
+      // Verify connection on startup
+      transporter.verify((error, success) => {
+        if (error) {
+          console.error('❌ Email transporter verification failed:', error.message);
+          console.error('   Error Code:', error.code);
+        } else {
+          console.log('✅ Email transporter is ready!');
+        }
       });
     } catch (e) {
       console.error('⚠️ Error creating nodemailer transporter:', e.message);
@@ -58,6 +87,8 @@ export async function sendOtpMail(to, code) {
   try {
     const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
     
+    console.log(`📧 Attempting to send OTP email to: ${to}`);
+    
     const info = await transporter.sendMail({
       from,
       to,
@@ -74,15 +105,20 @@ export async function sendOtpMail(to, code) {
         </div>
       `
     });
-    console.log(`✅ OTP email sent to ${to}: ${info.messageId}`);
+    console.log(`✅ OTP email sent successfully to ${to}: ${info.messageId}`);
     return info.messageId;
   } catch (err) {
-    console.error(`⚠️ OTP Email Send Error for ${to}:`, err.message);
+    console.error(`⚠️ OTP Email Send Error for ${to}:`);
+    console.error(`   Error Code: ${err.code}`);
+    console.error(`   Error Message: ${err.message}`);
+    console.error(`   Error Response: ${err.response}`);
+    
     // Log OTP to console as fallback
     console.log(`\n📧 ============================================`);
     console.log(`📧 OTP for ${to}: ${code}`);
     console.log(`📧 Email sending failed. OTP logged above.`);
     console.log(`📧 ============================================\n`);
+    
     // Return success so registration/login can continue
     return 'console-logged-fallback';
   }
