@@ -65,8 +65,4 @@ export async function sendOtpMail(to, code) {
     console.error("OTP Email Send Error:", err);
     throw new Error("Failed to send OTP email");
   }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 00217c65d1c3679bd60b008def41c4fc7adc7082
