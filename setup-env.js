@@ -13,6 +13,14 @@ DB_NAME=sonaura
 DB_USER=sonaura_user
 DB_PASSWORD=yShz6JGrkxVJpRvGl48JHmidF9dKRKhg
 
+# Email Configuration (Gmail)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=pradeepkumarsoni2002@gmail.com
+EMAIL_PASS=ixljklubntorhyhy
+EMAIL_FROM=Sonaura <no-reply@sonaura.in>
+EMAIL_SECURE=false
+
 # JWT Secret (keep this secure)
 JWT_SECRET=sonaura_jwt_secret_2024_change_in_production
 
@@ -21,6 +29,9 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:5174
 
 # Port for backend server
 PORT=5000
+
+# Node environment
+NODE_ENV=production
 
 # Optional: Disable price cron if needed
 # DISABLE_PRICE_CRON=true

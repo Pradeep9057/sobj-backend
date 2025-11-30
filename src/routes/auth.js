@@ -10,10 +10,21 @@ const router = Router();
  */
 router.post('/register', async (req, res) => {
   const { name, email, password } = req.body;
+  
+  // Validate input
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required' });
+  }
+  
+  if (password.length < 6) {
+    return res.status(400).json({ message: 'Password must be at least 6 characters' });
+  }
+  
   try {
     const user = await register({ name, email, password });
     res.status(201).json(user);
   } catch (e) {
+    console.error('Registration error:', e.message);
     res.status(400).json({ message: e.message });
   }
 });
@@ -23,10 +34,17 @@ router.post('/register', async (req, res) => {
  */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
+  
+  // Validate input
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required' });
+  }
+  
   try {
     const r = await login({ email, password });
     res.json(r);
   } catch (e) {
+    console.error('Login error:', e.message);
     res.status(401).json({ message: e.message });
   }
 });
@@ -36,6 +54,12 @@ router.post('/login', async (req, res) => {
  */
 router.post('/verify-otp', async (req, res) => {
   const { email, code } = req.body;
+  
+  // Validate input
+  if (!email || !code) {
+    return res.status(400).json({ message: 'Email and code are required' });
+  }
+  
   try {
     const result = await verifyOtp({ email, code });
     
@@ -50,6 +74,7 @@ router.post('/verify-otp', async (req, res) => {
     // Also return token in response for frontend to store
     res.json({ token: result.token, ok: true });
   } catch (e) {
+    console.error('OTP verification error:', e.message);
     res.status(400).json({ message: e.message });
   }
 });
