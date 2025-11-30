@@ -8,9 +8,30 @@ const router = Router();
 const q = (text, params) => pool.query(text, params);
 
 /**
+ * Middleware to handle auth from URL token parameter
+ */
+async function handleInvoiceAuth(req, res, next) {
+  // Check for token in query parameter first (for invoice viewing)
+  const tokenParam = req.query.token;
+  if (tokenParam) {
+    try {
+      const jwt = await import('jsonwebtoken');
+      const decoded = jwt.default.verify(tokenParam, process.env.JWT_SECRET);
+      req.user = decoded;
+      return next();
+    } catch (err) {
+      // Token invalid, try standard auth
+    }
+  }
+  
+  // Fall back to standard auth
+  return requireAuth(req, res, next);
+}
+
+/**
  * Generate invoice for order
  */
-router.get('/:orderId', requireAuth, async (req, res) => {
+router.get('/:orderId', handleInvoiceAuth, async (req, res) => {
   try {
     const { orderId } = req.params;
     const userId = req.user.id;
@@ -62,7 +83,7 @@ router.get('/:orderId', requireAuth, async (req, res) => {
 /**
  * Download invoice as PDF (placeholder - can integrate with PDF library)
  */
-router.get('/:orderId/pdf', requireAuth, async (req, res) => {
+router.get('/:orderId/pdf', handleInvoiceAuth, async (req, res) => {
   try {
     const { orderId } = req.params;
     const userId = req.user.id;

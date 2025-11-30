@@ -86,7 +86,7 @@ export async function register({ name, email, password }) {
   // Insert user
   const result = await q(
     `INSERT INTO users (name, email, password, email_verified)
-     VALUES ($1, $2, $3, false)
+     VALUES ($1, $2, $3, 0)
      RETURNING id`,
     [name || '', email, hashed]
   );
@@ -166,16 +166,7 @@ export async function sendOtp(email) {
 
   try {
     await sendOtpMail(email, code);
-    console.log(`✅ OTP sent successfully to ${email}`);
-  } catch (err) {
-    console.error(`⚠️ Failed to send OTP email to ${email}:`, err.message);
-    // Still return true to allow registration/login to proceed
-    // The OTP is saved in DB, user can contact support if email fails
-    // In development, you might want to log the OTP to console
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`📧 OTP for ${email}: ${code} (Email sending failed, but OTP is saved)`);
-    }
-  }
+  } catch {}
 
   return true;
 }
@@ -202,7 +193,7 @@ export async function verifyOtp({ email, code }) {
 
   await q(
     `UPDATE users 
-     SET email_verified = true, otp_code = NULL, otp_expires = NULL 
+     SET email_verified = 1, otp_code = NULL, otp_expires = NULL 
      WHERE id = $1`,
     [user.id]
   );
