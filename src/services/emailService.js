@@ -32,6 +32,10 @@ let transporter = null;
 function getTransport() {
   if (transporter) return transporter;
 
+  if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new Error('Email configuration missing: EMAIL_HOST, EMAIL_USER, and EMAIL_PASS must be set');
+  }
+
   transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: Number(process.env.EMAIL_PORT || 587),
@@ -40,6 +44,12 @@ function getTransport() {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 30000,
+    tls: {
+      rejectUnauthorized: false
+    }
   });
 
   return transporter;
@@ -63,6 +73,9 @@ export async function sendOtpMail(to, code) {
     return info.messageId;
   } catch (err) {
     console.error("OTP Email Send Error:", err);
-    throw new Error("Failed to send OTP email");
+    const errorMsg = err.code 
+      ? `Failed to send OTP email: ${err.code} - ${err.message}`
+      : `Failed to send OTP email: ${err.message}`;
+    throw new Error(errorMsg);
   }
 }

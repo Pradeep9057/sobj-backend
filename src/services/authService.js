@@ -166,7 +166,12 @@ export async function sendOtp(email) {
 
   try {
     await sendOtpMail(email, code);
-  } catch {}
+    console.log(`✅ OTP email sent successfully to ${email}`);
+  } catch (err) {
+    console.error(`❌ Failed to send OTP email to ${email}:`, err.message);
+    // Still return true so OTP is saved in DB even if email fails
+    // User can request OTP again if needed
+  }
 
   return true;
 }

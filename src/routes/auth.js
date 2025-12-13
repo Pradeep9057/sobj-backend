@@ -33,8 +33,6 @@ router.get('/profile', requireAuth, async (req, res) => {
   }
 });
 
-export default router;
-
 router.post('/send-otp', async (req, res) => {
   const { email } = req.body;
   try {
@@ -50,7 +48,7 @@ router.post('/verify-otp', async (req, res) => {
   try {
     const { token } = await verifyOtp({ email, code });
     res.cookie('token', token, { httpOnly: true, sameSite: 'lax', secure: false, maxAge: 2 * 24 * 60 * 60 * 1000 });
-    res.json({ ok: true });
+    res.json({ token, ok: true });
   } catch (e) {
     res.status(400).json({ message: e.message });
   }
@@ -60,5 +58,7 @@ router.post('/logout', async (req, res) => {
   res.clearCookie('token', { httpOnly: true, sameSite: 'lax', secure: false });
   res.json({ ok: true });
 });
+
+export default router;
 
 
