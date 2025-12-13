@@ -14,16 +14,20 @@ Add these environment variables in your Render dashboard:
 Add each variable one by one:
 
 ```
-MAILGUN_API_KEY=610e980c84fda60bf800d10ff79fdee2-04af4ed8-f1604056
+MAILGUN_API_KEY=your_mailgun_api_key_here
 ```
 
 ```
-MAILGUN_DOMAIN=sandbox212a53f7b5474dd7b8bfe5b14c4a810b.mailgun.org
+MAILGUN_DOMAIN=your_sandbox_domain.mailgun.org
 ```
 
 ```
 EMAIL_FROM=Sonaura <no-reply@sonaura.in>
 ```
+
+**Important**: Replace the placeholders with your actual Mailgun credentials:
+- `your_mailgun_api_key_here` → Your Private API Key from Mailgun dashboard
+- `your_sandbox_domain.mailgun.org` → Your sandbox domain (e.g., `sandboxxxxxx.mailgun.org`)
 
 ### Step 3: Remove Old SMTP Variables (Optional)
 
@@ -55,7 +59,7 @@ Since you're using a Mailgun sandbox domain, you can only send emails to **autho
 
 To authorize your email:
 1. Go to Mailgun Dashboard
-2. Click on your domain: `sandbox212a53f7b5474dd7b8bfe5b14c4a810b.mailgun.org`
+2. Click on your sandbox domain
 3. Go to **Authorized Recipients** tab
 4. Click **Add Recipient**
 5. Enter your email address (e.g., `pradeepkumarsoni2002@gmail.com`)
