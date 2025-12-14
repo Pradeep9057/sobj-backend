@@ -1,5 +1,5 @@
 // import pool from '../db.js';
-// import bcrypt from 'bcrypt';
+// import bcrypt from 'bcryptjs';
 
 // export async function changePassword(userId, oldPassword, newPassword) {
 //   if (!newPassword || newPassword.length < 6) throw new Error('Password too short');
@@ -13,7 +13,7 @@
 
 
 import pool from '../db.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 // Helper for shorter queries
 const q = (sql, params) => pool.query(sql, params);

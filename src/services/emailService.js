@@ -23,16 +23,19 @@
 
 
 import nodemailer from 'nodemailer';
-import axios from 'axios';
 
-let transporter = null;
+let transporters = new Map();
 
 /**
- * Create transporter only once (prevents re-creation + errors on Render)
- * Resets on failure to allow retry
+ * Create SMTP transporter with specific configuration
+ * Tries multiple ports and configurations to bypass Render's SMTP blocking
  */
-function getTransport() {
-  if (transporter) return transporter;
+function createTransport(port, secure = null) {
+  const key = `${process.env.EMAIL_HOST}:${port}:${secure}`;
+  
+  if (transporters.has(key)) {
+    return transporters.get(key);
+  }
 
   if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     const missing = [];
@@ -42,61 +45,60 @@ function getTransport() {
     throw new Error(`Email configuration missing: ${missing.join(', ')} must be set in environment variables`);
   }
 
-  const port = Number(process.env.EMAIL_PORT || 587);
-  const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
+  // Determine secure mode
+  let isSecure = secure;
+  if (isSecure === null) {
+    isSecure = process.env.EMAIL_SECURE === 'true' || port === 465;
+  }
 
-  transporter = nodemailer.createTransport({
+  const config = {
     host: process.env.EMAIL_HOST,
     port: port,
-    secure: secure,
+    secure: isSecure,
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-    // For production environments like Render
-    pool: true,
-    maxConnections: 1,
-    maxMessages: 3,
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 20000,
+    // Don't use pooling on Render - create new connections
+    pool: false,
     tls: {
       rejectUnauthorized: false
-    }
-  });
+    },
+    // Try different connection methods
+    requireTLS: !isSecure,
+    debug: false
+  };
 
+  const transporter = nodemailer.createTransport(config);
+  transporters.set(key, transporter);
+  
   return transporter;
 }
 
 /**
- * Reset transporter (useful for retry after failure)
+ * Reset all transporters
  */
-function resetTransport() {
-  if (transporter) {
-    transporter.close();
-    transporter = null;
-  }
+function resetTransporters() {
+  transporters.forEach((transporter) => {
+    try {
+      transporter.close();
+    } catch (e) {
+      // Ignore errors when closing
+    }
+  });
+  transporters.clear();
 }
 
 /**
- * Send OTP email using Mailgun HTTP API (works on Render)
- * This bypasses SMTP port blocking by using HTTPS (port 443)
+ * Send OTP email using SMTP with multiple fallback strategies
+ * Tries different ports and configurations to work around Render's SMTP blocking
  */
-async function sendViaMailgunAPI(to, code) {
-  const apiKey = process.env.MAILGUN_API_KEY;
-  const domain = process.env.MAILGUN_DOMAIN;
+export async function sendOtpMail(to, code) {
   const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
-
-  if (!apiKey || !domain) {
-    throw new Error('Mailgun API configuration missing: MAILGUN_API_KEY and MAILGUN_DOMAIN must be set');
-  }
-
-  // Extract email from "Name <email>" format if needed
-  const fromEmail = from.includes('<') ? from.match(/<(.+)>/)?.[1] || from : from;
-
-  const mailgunUrl = `https://api.mailgun.net/v3/${domain}/messages`;
-  const auth = Buffer.from(`api:${apiKey}`).toString('base64');
-
+  
   const htmlContent = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
       <h2 style="color: #D4AF37;">Sonaura Verification Code</h2>
@@ -109,115 +111,80 @@ async function sendViaMailgunAPI(to, code) {
     </div>
   `;
 
-  try {
-    const response = await axios.post(
-      mailgunUrl,
-      new URLSearchParams({
-        from: fromEmail,
-        to: to,
-        subject: 'Your Sonaura verification code',
-        html: htmlContent
-      }),
-      {
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        timeout: 30000
-      }
-    );
+  // Try multiple port configurations in order of preference
+  // This helps bypass Render's SMTP port blocking
+  const portConfigs = [
+    { port: 587, secure: false, name: 'STARTTLS (587)' },
+    { port: 465, secure: true, name: 'SSL (465)' },
+    { port: 2525, secure: false, name: 'Alternative (2525)' },
+    { port: 25, secure: false, name: 'Standard (25)' },
+  ];
 
-    console.log(`✅ OTP email sent via Mailgun API to ${to} (Message ID: ${response.data.id})`);
-    return response.data.id;
-  } catch (err) {
-    const errorMsg = err.response?.data?.message || err.message || 'Unknown error';
-    console.error(`❌ Mailgun API Error:`, {
-      status: err.response?.status,
-      message: errorMsg,
-      data: err.response?.data
-    });
-    throw new Error(`Mailgun API failed: ${errorMsg}`);
+  // If EMAIL_PORT is explicitly set, try that first
+  if (process.env.EMAIL_PORT) {
+    const customPort = Number(process.env.EMAIL_PORT);
+    const customSecure = process.env.EMAIL_SECURE === 'true' || customPort === 465;
+    portConfigs.unshift({ port: customPort, secure: customSecure, name: `Custom (${customPort})` });
   }
-}
 
-/**
- * Send OTP email using SMTP (for local development)
- */
-async function sendViaSMTP(to, code) {
-  const from = process.env.EMAIL_FROM || `Sonaura <no-reply@sonaura.in>`;
-  let transport;
-  let retryCount = 0;
-  const maxRetries = 2;
+  let lastError = null;
 
-  while (retryCount <= maxRetries) {
+  for (const config of portConfigs) {
     try {
-      transport = getTransport();
+      console.log(`🔄 Attempting SMTP connection via ${config.name}...`);
       
-      // Verify connection before sending (only on first attempt)
-      if (retryCount === 0) {
-        await transport.verify();
+      const transport = createTransport(config.port, config.secure);
+      
+      // Try to verify connection (with shorter timeout)
+      try {
+        await Promise.race([
+          transport.verify(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Verification timeout')), 10000))
+        ]);
+        console.log(`✅ Connection verified via ${config.name}`);
+      } catch (verifyErr) {
+        console.log(`⚠️  Verification skipped for ${config.name}, proceeding to send...`);
       }
 
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #D4AF37;">Sonaura Verification Code</h2>
-          <p>Your verification code is:</p>
-          <div style="background: #f5f5f5; padding: 20px; text-align: center; margin: 20px 0; border-radius: 5px;">
-            <h1 style="color: #D4AF37; margin: 0; font-size: 32px; letter-spacing: 5px;">${code}</h1>
-          </div>
-          <p>This code will expire in <b>10 minutes</b>.</p>
-          <p style="color: #666; font-size: 12px;">If you didn't request this code, please ignore this email.</p>
-        </div>
-      `;
+      const info = await Promise.race([
+        transport.sendMail({
+          from,
+          to,
+          subject: 'Your Sonaura verification code',
+          html: htmlContent,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Send timeout')), 25000))
+      ]);
 
-      const info = await transport.sendMail({
-        from,
-        to,
-        subject: 'Your Sonaura verification code',
-        html: htmlContent,
-      });
-
-      console.log(`✅ OTP email sent via SMTP to ${to} (Message ID: ${info.messageId})`);
+      console.log(`✅ OTP email sent successfully to ${to} via ${config.name} (Message ID: ${info.messageId})`);
       return info.messageId;
+      
     } catch (err) {
-      retryCount++;
-      console.error(`❌ SMTP Email Send Error (Attempt ${retryCount}/${maxRetries + 1}):`, {
+      lastError = err;
+      console.error(`❌ Failed via ${config.name}:`, {
         code: err.code,
         message: err.message,
-        response: err.response,
-        command: err.command,
-        responseCode: err.responseCode
+        port: config.port
       });
-
-      // Reset transporter on connection/auth errors to allow retry
-      if (err.code === 'ECONNECTION' || err.code === 'EAUTH' || err.code === 'ETIMEDOUT') {
-        resetTransport();
+      
+      // Reset transporters to allow fresh connection attempts
+      resetTransporters();
+      
+      // If it's an authentication error, don't try other ports
+      if (err.code === 'EAUTH') {
+        throw new Error(`SMTP authentication failed: ${err.message}. Please check your EMAIL_USER and EMAIL_PASS.`);
       }
-
-      // If this was the last retry, throw the error
-      if (retryCount > maxRetries) {
-        const errorMsg = err.code 
-          ? `Failed to send OTP email via SMTP after ${maxRetries + 1} attempts: ${err.code} - ${err.message}`
-          : `Failed to send OTP email via SMTP after ${maxRetries + 1} attempts: ${err.message}`;
-        throw new Error(errorMsg);
-      }
-
-      // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      
+      // Wait a bit before trying next configuration
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
-}
 
-/**
- * Main function to send OTP email
- * Uses Mailgun API if configured (recommended for Render), otherwise falls back to SMTP
- */
-export async function sendOtpMail(to, code) {
-  // Prefer Mailgun API if configured (works on Render)
-  if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
-    return await sendViaMailgunAPI(to, code);
-  }
+  // If all configurations failed
+  const errorMsg = lastError?.code 
+    ? `Failed to send email via SMTP. All port configurations failed. Last error: ${lastError.code} - ${lastError.message}`
+    : `Failed to send email via SMTP. All port configurations failed. Last error: ${lastError?.message || 'Unknown error'}`;
   
-  // Fallback to SMTP (for local development)
-  return await sendViaSMTP(to, code);
+  console.error(`❌ All SMTP attempts failed for ${to}`);
+  throw new Error(errorMsg);
 }
